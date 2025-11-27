@@ -938,8 +938,9 @@ function App() {
         </header>
 
         {/* CHAT AREA */}
-        <section className="flex-1 flex flex-col px-4 md:px-8 py-6 overflow-hidden">
-          <div className="flex-1 w-full max-w-3xl mx-auto overflow-y-auto space-y-6 pb-4">
+        <section className="flex-1 flex flex-col px-3 sm:px-4 md:px-8 py-4 overflow-hidden">
+
+          <div className="flex-1 w-full max-w-xl mx-auto overflow-y-auto space-y-6 pb-4 px-1 sm:px-0">
             {messages.map((msg, index) => (
               <div
                 key={index}
@@ -985,7 +986,7 @@ function App() {
           {/* INPUT */}
           <form
             onSubmit={handleSend}
-            className="w-full max-w-3xl mx-auto mt-2 mb-4"
+            className="w-full max-w-xl mx-auto mt-2 mb-4 px-1 sm:px-0"
           >
             <div className="relative flex items-end">
               <textarea
