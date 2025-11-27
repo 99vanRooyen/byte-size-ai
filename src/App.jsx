@@ -17,6 +17,10 @@ const INITIAL_MESSAGES = [
   },
 ];
 
+// 🔹 Base URL for backend (local in dev, Render in production)
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:3001";
+
 function createId() {
   return (
     Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8)
@@ -58,7 +62,7 @@ function App() {
     setLoginError("");
 
     try {
-      const res = await fetch("http://localhost:3001/api/login", {
+      const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -97,7 +101,7 @@ function App() {
         setIsLoadingModels(true);
         setModelError(null);
 
-        const res = await fetch("http://localhost:3001/api/models", {
+        const res = await fetch(`${API_BASE_URL}/api/models`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -175,41 +179,63 @@ function App() {
   const selectedModelObj =
     filteredModels.find((m) => m.id === selectedModel) || null;
 
-  // ---------- INIT PROJECTS / CHATS ----------
-// ---------- PROJECTS / CHATS INIT ----------
-useEffect(() => {
-  if (!token) return; // only load after login
+  // ---------- PROJECTS / CHATS INIT ----------
+  useEffect(() => {
+    if (!token) return; // only load after login
 
-  async function loadChatState() {
-    try {
-      const res = await fetch("http://localhost:3001/api/chat-state", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    async function loadChatState() {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/chat-state`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-      if (!res.ok) {
-        throw new Error("Failed to load chat state");
-      }
+        if (!res.ok) {
+          throw new Error("Failed to load chat state");
+        }
 
-      const data = await res.json();
-      const serverProjects = data.projects || [];
-      const serverChats = data.chats || [];
+        const data = await res.json();
+        const serverProjects = data.projects || [];
+        const serverChats = data.chats || [];
 
-      if (serverProjects.length || serverChats.length) {
-        setProjects(serverProjects);
-        setChats(serverChats);
+        if (serverProjects.length || serverChats.length) {
+          setProjects(serverProjects);
+          setChats(serverChats);
 
-        const firstChat = serverChats[0] || null;
+          const firstChat = serverChats[0] || null;
 
-        setActiveChatId(firstChat ? firstChat.id : null);
-        setActiveProjectId(firstChat ? firstChat.projectId || null : null);
-        setExpandedProjectId(firstChat?.projectId || null);
-        setMessages(
-          firstChat?.messages?.length ? firstChat.messages : INITIAL_MESSAGES
-        );
-      } else {
-        // No state in DB yet -> create default
+          setActiveChatId(firstChat ? firstChat.id : null);
+          setActiveProjectId(firstChat ? firstChat.projectId || null : null);
+          setExpandedProjectId(firstChat?.projectId || null);
+          setMessages(
+            firstChat?.messages?.length ? firstChat.messages : INITIAL_MESSAGES
+          );
+        } else {
+          // No state in DB yet -> create default
+          const defaultProject = {
+            id: createId(),
+            name: "General",
+            createdAt: Date.now(),
+          };
+          const defaultChat = {
+            id: createId(),
+            projectId: null,
+            title: "New chat",
+            messages: INITIAL_MESSAGES,
+            createdAt: Date.now(),
+          };
+
+          setProjects([defaultProject]);
+          setChats([defaultChat]);
+          setActiveChatId(defaultChat.id);
+          setActiveProjectId(null);
+          setExpandedProjectId(null);
+          setMessages(INITIAL_MESSAGES);
+        }
+      } catch (err) {
+        console.error("Error loading chat state from backend:", err);
+        // Fallback: same default as above if something explodes
         const defaultProject = {
           id: createId(),
           name: "General",
@@ -230,34 +256,10 @@ useEffect(() => {
         setExpandedProjectId(null);
         setMessages(INITIAL_MESSAGES);
       }
-    } catch (err) {
-      console.error("Error loading chat state from backend:", err);
-      // Fallback: same default as above if something explodes
-      const defaultProject = {
-        id: createId(),
-        name: "General",
-        createdAt: Date.now(),
-      };
-      const defaultChat = {
-        id: createId(),
-        projectId: null,
-        title: "New chat",
-        messages: INITIAL_MESSAGES,
-        createdAt: Date.now(),
-      };
-
-      setProjects([defaultProject]);
-      setChats([defaultChat]);
-      setActiveChatId(defaultChat.id);
-      setActiveProjectId(null);
-      setExpandedProjectId(null);
-      setMessages(INITIAL_MESSAGES);
     }
-  }
 
-  loadChatState();
-}, [token]);
-
+    loadChatState();
+  }, [token]);
 
   // ---------- SAVE ----------
   useEffect(() => {
@@ -458,8 +460,8 @@ useEffect(() => {
     try {
       const endpoint =
         isImageMode && filteredModels.length > 0
-          ? "http://localhost:3001/api/image"
-          : "http://localhost:3001/api/ai";
+          ? `${API_BASE_URL}/api/image`
+          : `${API_BASE_URL}/api/ai`;
 
       const response = await fetch(endpoint, {
         method: "POST",
@@ -561,6 +563,7 @@ useEffect(() => {
       </div>
     );
   }
+
   // ---------------- MAIN APP ----------------
   return (
     <div className="min-h-screen w-screen bg-[#050509] text-slate-100 flex overflow-hidden relative">
@@ -598,7 +601,7 @@ useEffect(() => {
         <button
           type="button"
           onClick={() => handleNewChat(undefined)}
-          className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg-white text-black hover:bg-zinc-200 text-sm py-2 px-3 transition"
+          className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg_WHITE text-black hover:bg-zinc-200 text-sm py-2 px-3 transition bg-white"
         >
           <span className="text-lg leading-none">＋</span>
           <span className="font-medium">New chat</span>
@@ -993,16 +996,16 @@ useEffect(() => {
                 className="w-full resize-none rounded-2xl bg-[#1c1d22] border border-zinc-700 px-4 py-3 pr-20 text-sm text-slate-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-400"
               />
 
-             <button
-  type="submit"
-  disabled={
-    isSending ||
-    !input.trim() ||
-    isLoadingModels ||
-    !selectedModel ||
-    filteredModels.length === 0
-  }
-  className={`absolute right-2 bottom-2 px-4 py-1.5 rounded-xl text-sm font-medium transition
+              <button
+                type="submit"
+                disabled={
+                  isSending ||
+                  !input.trim() ||
+                  isLoadingModels ||
+                  !selectedModel ||
+                  filteredModels.length === 0
+                }
+                className={`absolute right-2 bottom-2 px-4 py-1.5 rounded-xl text-sm font-medium transition
     ${
       isSending ||
       !input.trim() ||
@@ -1013,10 +1016,9 @@ useEffect(() => {
         : "bg-[#130dbb] text-white hover:bg-[#2620e6]"
     }
   `}
->
-  {isSending ? "..." : "Send"}
-</button>
-
+              >
+                {isSending ? "..." : "Send"}
+              </button>
             </div>
 
             {selectedModelObj && (
