@@ -669,9 +669,9 @@ function App() {
 
   // ---------------- MAIN APP ----------------
   return (
-    <div className="min-h-screen bg-[#050509] text-slate-100 flex justify-center">
+    <div className="min-h-screen w-full bg-[#050509] text-slate-100 flex justify-center overflow-hidden">
       {/* inner width container */}
-      <div className="flex w-full max-w-5xl relative overflow-hidden">
+      <div className="flex w-full max-w-5xl relative">
         {/* MOBILE OVERLAY */}
         {isSidebarOpen && (
           <div
@@ -706,7 +706,7 @@ function App() {
           <button
             type="button"
             onClick={() => handleNewChat(undefined)}
-            className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg_WHITE text-black hover:bg-zinc-200 text-sm py-2 px-3 transition bg-white"
+            className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg-white text-black hover:bg-zinc-200 text-sm py-2 px-3 transition"
           >
             <span className="text-lg leading-none">＋</span>
             <span className="font-medium">New chat</span>
@@ -960,7 +960,7 @@ function App() {
         </aside>
 
         {/* MAIN PANEL */}
-        <main className="flex-1 flex flex-col md:ml-64 md:pl-0">
+        <main className="flex-1 flex flex-col md:ml-64">
           {/* TOP BAR */}
           <header className="border-b border-zinc-800 px-4 md:px-8 py-3 flex items-center justify-between gap-4 bg-[#050509]/90 backdrop-blur">
             <div className="flex items-center gap-3 flex-1">
@@ -1075,6 +1075,7 @@ function App() {
 
           {/* CHAT AREA */}
           <section className="flex-1 flex flex-col px-4 md:px-8 py-4 pb-[env(safe-area-inset-bottom)] overflow-hidden">
+            {/* scrollable message area */}
             <div className="flex-1 w-full max-w-xl mx-auto overflow-y-auto space-y-6 pb-4">
               {messages.map((msg, index) => {
                 // Special case: video response
