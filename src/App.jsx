@@ -476,7 +476,7 @@ function App() {
           aspectRatio: "16:9",
           durationSeconds: 6,
           audioEnabled: true,
-          model: selectedVideoModel, // send selected fal model
+          model: selectedVideoModel,
         }),
       });
 
@@ -669,9 +669,9 @@ function App() {
 
   // ---------------- MAIN APP ----------------
   return (
-    <div className="min-h-screen w-full bg-[#050509] text-slate-100 flex justify-center overflow-hidden">
+    <div className="min-h-screen w-full bg-[#050509] text-slate-100 flex">
       {/* inner width container */}
-      <div className="flex w-full max-w-5xl relative">
+      <div className="flex w-full relative">
         {/* MOBILE OVERLAY */}
         {isSidebarOpen && (
           <div
@@ -960,9 +960,9 @@ function App() {
         </aside>
 
         {/* MAIN PANEL */}
-        <main className="flex-1 flex flex-col md:ml-64">
+        <main className="flex-1 flex flex-col">
           {/* TOP BAR */}
-          <header className="border-b border-zinc-800 px-4 md:px-8 py-3 flex items-center justify-between gap-4 bg-[#050509]/90 backdrop-blur">
+          <header className="border-b border-zinc-800 px-3 md:px-6 py-3 flex items-center justify-between gap-4 bg-[#050509]/90 backdrop-blur">
             <div className="flex items-center gap-3 flex-1">
               {/* Mobile menu button */}
               <button
@@ -1074,9 +1074,9 @@ function App() {
           </header>
 
           {/* CHAT AREA */}
-          <section className="flex-1 flex flex-col px-4 md:px-8 py-4 pb-[env(safe-area-inset-bottom)] overflow-hidden">
+          <section className="flex-1 flex flex-col px-3 sm:px-5 md:px-6 py-4 pb-[env(safe-area-inset-bottom)] overflow-hidden">
             {/* scrollable message area */}
-            <div className="flex-1 w-full max-w-xl mx-auto overflow-y-auto space-y-6 pb-4">
+            <div className="flex-1 w-full overflow-y-auto space-y-6 pb-4">
               {messages.map((msg, index) => {
                 // Special case: video response
                 if (msg.type === "video" && msg.videoUrl) {
@@ -1140,10 +1140,7 @@ function App() {
             </div>
 
             {/* INPUT */}
-            <form
-              onSubmit={handleSend}
-              className="w-full max-w-xl mx-auto mt-2 mb-4 px-0"
-            >
+            <form onSubmit={handleSend} className="w-full mt-2 mb-4">
               <div className="relative flex items-end">
                 <textarea
                   rows={1}
@@ -1157,12 +1154,12 @@ function App() {
                   type="submit"
                   disabled={disableSend}
                   className={`absolute right-2 bottom-2 px-4 py-1.5 rounded-xl text-sm font-medium transition
-    ${
-      disableSend
-        ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-        : "bg-[#130dbb] text-white hover:bg-[#2620e6]"
-    }
-  `}
+                    ${
+                      disableSend
+                        ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                        : "bg-[#130dbb] text-white hover:bg-[#2620e6]"
+                    }
+                  `}
                 >
                   {isSending ? "..." : "Send"}
                 </button>
