@@ -5,6 +5,7 @@ const cors = require("cors");
 const axios = require("axios");
 const jwt = require("jsonwebtoken"); // login auth
 const db = require("./db"); // sqlite chat-state
+const { fal } = require("@fal-ai/client"); // fal.ai client
 
 const app = express();
 app.use(cors());
@@ -14,6 +15,7 @@ app.use(express.json());
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const JWT_SECRET = process.env.JWT_SECRET;
+const FAL_API_KEY = process.env.FAL_API_KEY;
 
 if (!OPENROUTER_API_KEY) {
   console.warn("⚠️ OPENROUTER_API_KEY is missing from environment.");
@@ -26,6 +28,15 @@ if (!ADMIN_PASSWORD) {
 if (!JWT_SECRET) {
   console.warn("⚠️ JWT_SECRET is missing from environment.");
 }
+
+if (!FAL_API_KEY) {
+  console.warn("⚠️ FAL_API_KEY is missing from environment. /api/video will fail.");
+}
+
+// configure fal client
+fal.config({
+  credentials: FAL_API_KEY,
+});
 
 // ------------- AUTH MIDDLEWARE & LOGIN -------------
 
@@ -160,7 +171,7 @@ app.get("/api/models", requireAuth, async (req, res) => {
 
 /**
  * GET /api/video-models
- * Fetches ONLY video-capable models from OpenRouter
+ * (Still returns OpenRouter video-capable models, if you ever need it)
  */
 app.get("/api/video-models", requireAuth, async (req, res) => {
   try {
@@ -416,7 +427,7 @@ Speak clearly, be practical, and avoid fluff.
 
 /**
  * POST /api/image
- * Image Generation Endpoint
+ * Image Generation Endpoint (OpenRouter)
  */
 app.post("/api/image", requireAuth, async (req, res) => {
   try {
@@ -492,6 +503,91 @@ app.post("/api/image", requireAuth, async (req, res) => {
     }
   }
 });
+
+// ------------- VIDEO GENERATION (fal.ai, ONLY OVI & WAN) -------------
+
+/**
+ * POST /api/video
+ * Body: { prompt, aspectRatio, durationSeconds, audioEnabled, model }
+ */
+app.post("/api/video", requireAuth, async (req, res) => {
+  try {
+    const {
+      prompt,
+      aspectRatio = "16:9",
+      durationSeconds = 6,
+      audioEnabled = true,
+      model,
+    } = req.body;
+
+    if (!prompt || !prompt.trim()) {
+      return res
+        .status(400)
+        .json({ error: "Missing prompt for video generation." });
+    }
+
+    if (!FAL_API_KEY) {
+      return res
+        .status(500)
+        .json({ error: "FAL_API_KEY not configured on server." });
+    }
+
+    // 🔒 Only allow Wan 2.5 and Ovi. Everything else is forced to Ovi.
+    const ALLOWED_MODELS = ["fal-ai/ovi", "fal-ai/wan-2.5"];
+    const selectedModel = ALLOWED_MODELS.includes(model)
+      ? model
+      : "fal-ai/ovi";
+
+    console.log("🎬 /api/video using model:", selectedModel);
+
+    const result = await fal.subscribe(
+      selectedModel,
+      {
+        input: {
+          prompt,
+          aspect_ratio: aspectRatio,
+          duration_seconds: durationSeconds,
+          enable_audio: audioEnabled,
+        },
+      },
+      {
+        logs: true,
+        timeout: 600000,
+      }
+    );
+
+    const videoUrl =
+      result?.data?.video_url ||
+      result?.data?.output?.[0]?.url ||
+      null;
+
+    if (!videoUrl) {
+      console.error("fal.ai returned no video URL:", result);
+      return res
+        .status(500)
+        .json({ error: "fal.ai did not return a video URL." });
+    }
+
+    return res.json({
+      reply: "Here’s your generated video.",
+      videoUrl,
+      model: selectedModel,
+    });
+  } catch (err) {
+    console.error("🔥 ERROR in /api/video:", err);
+    if (err.response) {
+      console.error("Status:", err.response.status);
+      console.error("Data:", err.response.data);
+    }
+
+    return res.status(500).json({
+      error: "Video request failed.",
+      details: err.message || err,
+    });
+  }
+});
+
+// ------------- SERVER START -------------
 
 const PORT = process.env.PORT || 3001;
 
