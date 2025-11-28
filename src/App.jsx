@@ -21,6 +21,20 @@ const INITIAL_MESSAGES = [
 const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:3001";
 
+// 🔹 Only use the cheap video models from fal.ai
+const VIDEO_MODELS = [
+  {
+    id: "fal-ai/ovi",
+    label: "Ovi (per video)",
+    priceLabel: "Paid • ~ $0.20 / video • ≈ 5 videos per $1",
+  },
+  {
+    id: "fal-ai/wan-2.5",
+    label: "Wan 2.5 (per second)",
+    priceLabel: "Paid • ~ $0.05 / sec • ≈ 20 sec per $1",
+  },
+];
+
 function createId() {
   return (
     Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8)
@@ -45,6 +59,11 @@ function App() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [modelError, setModelError] = useState(null);
+
+  // 🔹 video model selection (fal.ai) – default Ovi
+  const [selectedVideoModel, setSelectedVideoModel] = useState(
+    VIDEO_MODELS[0].id
+  );
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isBrandOpen, setIsBrandOpen] = useState(false);
@@ -92,7 +111,7 @@ function App() {
     setModelError(null);
   }
 
-  // ---------- LOAD MODELS ----------
+  // ---------- LOAD MODELS (OPENROUTER) ----------
   useEffect(() => {
     if (!token) return;
 
@@ -423,6 +442,77 @@ function App() {
 
   const globalChats = chats.filter((chat) => !chat.projectId);
 
+  // ---------- VIDEO PROMPT HANDLER (fal.ai) ----------
+  async function handleVideoPrompt(promptText) {
+    if (!token) {
+      alert("Not authenticated. Please log in again.");
+      return;
+    }
+
+    if (!activeChatId) {
+      handleNewChat();
+    }
+
+    const userMessage = {
+      role: "user",
+      text: promptText,
+      meta: { brand: activeBrand, mode: activeMode },
+    };
+
+    const newMessages = [...messages, userMessage];
+    setMessagesAndPersist(newMessages);
+    setInput("");
+    setIsSending(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/video`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          prompt: promptText,
+          aspectRatio: "16:9",
+          durationSeconds: 6,
+          audioEnabled: true,
+          model: selectedVideoModel, // send selected fal model
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.status === 401) {
+        handleLogout();
+        throw new Error("Unauthorized. Please log in again.");
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || "Video request failed");
+      }
+
+      const assistantMessage = {
+        role: "assistant",
+        text: "Here’s your generated video:",
+        type: "video",
+        videoUrl: data.videoUrl || null,
+      };
+
+      setMessagesAndPersist([...newMessages, assistantMessage]);
+    } catch (err) {
+      console.error("Backend video error:", err);
+      const errorMessage = {
+        role: "assistant",
+        text:
+          err.message ||
+          "Your backend returned an error while generating video. Check the server console for details.",
+      };
+      setMessagesAndPersist([...newMessages, errorMessage]);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
   // ---------- SEND ----------
   async function handleSend(e) {
     e.preventDefault();
@@ -430,6 +520,12 @@ function App() {
     if (!trimmed) return;
     if (!token) {
       alert("Not authenticated. Please log in again.");
+      return;
+    }
+
+    // Route video prompts to fal.ai endpoint
+    if (isVideoMode) {
+      await handleVideoPrompt(trimmed);
       return;
     }
 
@@ -511,10 +607,17 @@ function App() {
     }
   }
 
+  // ---------- SEND BUTTON DISABLED STATE ----------
+  const disableSend =
+    isSending ||
+    !input.trim() ||
+    (!isVideoMode &&
+      (isLoadingModels || !selectedModel || filteredModels.length === 0));
+
   // ---------------- LOGIN SCREEN ----------------
   if (!token) {
     return (
-      <div className="min-h-screen w-screen bg-[#050509] flex items-center justify-center px-4">
+      <div className="min-h-screen w-full bg-[#050509] flex items-center justify-center px-4">
         <div className="w-full max-w-sm border border-zinc-800 rounded-2xl bg-[#0b0c10] px-6 py-6 shadow-xl">
           <div className="flex flex-col items-center mb-4">
             <img
@@ -566,471 +669,514 @@ function App() {
 
   // ---------------- MAIN APP ----------------
   return (
-    <div className="min-h-screen w-screen bg-[#050509] text-slate-100 flex overflow-hidden relative">
-      {/* MOBILE OVERLAY */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
-          onClick={() => {
-            setIsSidebarOpen(false);
-            setIsBrandOpen(false);
-            setIsModeOpen(false);
-          }}
-        />
-      )}
+    <div className="min-h-screen bg-[#050509] text-slate-100 flex justify-center">
+      {/* inner width container */}
+      <div className="flex w-full max-w-5xl relative overflow-hidden">
+        {/* MOBILE OVERLAY */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/60 md:hidden"
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsBrandOpen(false);
+              setIsModeOpen(false);
+            }}
+          />
+        )}
 
-      {/* SIDEBAR */}
-      <aside
-        className={`
+        {/* SIDEBAR */}
+        <aside
+          className={`
           fixed inset-y-0 left-0 z-40 w-64 border-r border-zinc-800 bg-[#0b0c10]
           flex flex-col px-4 py-4 transform transition-transform duration-200
           ${isSidebarOpen ? "translate-x-0" : "-translate-x-full"}
           md:static md:translate-x-0
         `}
-      >
-        {/* LOGO */}
-        <div className="mb-6 flex items-center justify-center w-full">
-          <img
-            src="/byte-size-logo.png"
-            alt="Byte-Size AI Logo"
-            className="h-16 w-16 object-contain"
-          />
-        </div>
-
-        {/* TOP NEW CHAT */}
-        <button
-          type="button"
-          onClick={() => handleNewChat(undefined)}
-          className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg_WHITE text-black hover:bg-zinc-200 text-sm py-2 px-3 transition bg-white"
         >
-          <span className="text-lg leading-none">＋</span>
-          <span className="font-medium">New chat</span>
-        </button>
+          {/* LOGO */}
+          <div className="mb-6 flex items-center justify-center w-full">
+            <img
+              src="/byte-size-logo.png"
+              alt="Byte-Size AI Logo"
+              className="h-16 w-16 object-contain"
+            />
+          </div>
 
-        {/* BRAND */}
-        <div className="mb-3 relative">
+          {/* TOP NEW CHAT */}
           <button
             type="button"
-            onClick={() => {
-              setIsBrandOpen((prev) => !prev);
-              setIsModeOpen(false);
-            }}
-            className="w-full rounded-md border border-[#130dbb] bg-[#130dbb] px-3 py-2 
-              text-left text-xs flex items-center justify-between hover:bg-[#2620e6] transition"
+            onClick={() => handleNewChat(undefined)}
+            className="mb-4 inline-flex items-center justify-center gap-2 rounded-md bg_WHITE text-black hover:bg-zinc-200 text-sm py-2 px-3 transition bg-white"
           >
-            <span className="text-[11px] uppercase text-white">
-              Active brand
-            </span>
-            <span className="text-[11px] text-white">{activeBrand}</span>
+            <span className="text-lg leading-none">＋</span>
+            <span className="font-medium">New chat</span>
           </button>
 
-          {isBrandOpen && (
-            <div className="absolute z-50 mt-1 w-full rounded-md bg-black border border-[#130dbb] shadow-lg">
-              {BRANDS.map((b) => (
-                <button
-                  key={b}
-                  type="button"
-                  onClick={() => {
-                    setActiveBrand(b);
-                    setIsBrandOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs border border-[#130dbb] rounded-md mb-1
+          {/* BRAND */}
+          <div className="mb-3 relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsBrandOpen((prev) => !prev);
+                setIsModeOpen(false);
+              }}
+              className="w-full rounded-md border border-[#130dbb] bg-[#130dbb] px-3 py-2 
+              text-left text-xs flex items-center justify-between hover:bg-[#2620e6] transition"
+            >
+              <span className="text-[11px] uppercase text-white">
+                Active brand
+              </span>
+              <span className="text-[11px] text-white">{activeBrand}</span>
+            </button>
+
+            {isBrandOpen && (
+              <div className="absolute z-50 mt-1 w-full rounded-md bg-black border border-[#130dbb] shadow-lg">
+                {BRANDS.map((b) => (
+                  <button
+                    key={b}
+                    type="button"
+                    onClick={() => {
+                      setActiveBrand(b);
+                      setIsBrandOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs border border-[#130dbb] rounded-md mb-1
                     ${
                       activeBrand === b
                         ? "bg-[#130dbb] text-white"
                         : "bg-black text-zinc-200 hover:bg-zinc-900"
                     }
                   `}
-                >
-                  {b}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-        {/* MODE */}
-        <div className="mb-4 relative">
-          <button
-            type="button"
-            onClick={() => {
-              setIsModeOpen((prev) => !prev);
-              setIsBrandOpen(false);
-            }}
-            className="w-full rounded-md border border-[#130dbb] bg-[#130dbb] px-3 py-2 
+          {/* MODE */}
+          <div className="mb-4 relative">
+            <button
+              type="button"
+              onClick={() => {
+                setIsModeOpen((prev) => !prev);
+                setIsBrandOpen(false);
+              }}
+              className="w-full rounded-md border border-[#130dbb] bg-[#130dbb] px-3 py-2 
               text-left text-xs flex items-center justify-between hover:bg-[#2620e6] transition"
-          >
-            <span className="text-[11px] uppercase text-white">Mode</span>
-            <span className="text-[11px] text-white">{activeMode}</span>
-          </button>
+            >
+              <span className="text-[11px] uppercase text-white">Mode</span>
+              <span className="text-[11px] text-white">{activeMode}</span>
+            </button>
 
-          {isModeOpen && (
-            <div className="absolute z-50 mt-1 w-full rounded-md bg-black border border-[#130dbb] shadow-lg">
-              {MODES.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => {
-                    setActiveMode(mode);
-                    setIsModeOpen(false);
-                    setIsSidebarOpen(false);
-                  }}
-                  className={`w-full text-left px-3 py-2 text-xs border border-[#130dbb] rounded-md mb-1
+            {isModeOpen && (
+              <div className="absolute z-50 mt-1 w-full rounded-md bg-black border border-[#130dbb] shadow-lg">
+                {MODES.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => {
+                      setActiveMode(mode);
+                      setIsModeOpen(false);
+                      setIsSidebarOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-xs border border-[#130dbb] rounded-md mb-1
                     ${
                       activeMode === mode
                         ? "bg-[#130dbb] text-white"
                         : "bg-black text-zinc-200 hover:bg-zinc-900"
                     }
                   `}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* GLOBAL CHATS */}
-        <div className="mb-3">
-          <div className="flex items-center justify-between mb-1 px-1">
-            <span className="text-[11px] uppercase text-zinc-500">Chats</span>
-            <button
-              type="button"
-              onClick={() => handleNewChat(undefined)}
-              className="text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
-            >
-              + New
-            </button>
+                  >
+                    {mode}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="space-y-1 pr-1 max-h-32 overflow-y-auto">
-            {globalChats.map((chat) => (
-              <div key={chat.id} className="flex items-center group">
-                <button
-                  type="button"
-                  onClick={() => handleSelectChat(chat.id)}
-                  className={`flex-1 text-left px-3 py-2 rounded-md text-xs truncate transition
+          {/* GLOBAL CHATS */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-1 px-1">
+              <span className="text-[11px] uppercase text-zinc-500">Chats</span>
+              <button
+                type="button"
+                onClick={() => handleNewChat(undefined)}
+                className="text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
+              >
+                + New
+              </button>
+            </div>
+
+            <div className="space-y-1 pr-1 max-h-32 overflow-y-auto">
+              {globalChats.map((chat) => (
+                <div key={chat.id} className="flex items-center group">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectChat(chat.id)}
+                    className={`flex-1 text-left px-3 py-2 rounded-md text-xs truncate transition
                     ${
                       chat.id === activeChatId
                         ? "bg-zinc-800 text-zinc-50"
                         : "text-zinc-300 hover:bg-zinc-800/50"
                     }
                   `}
-                >
-                  {chat.title}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteChat(chat.id)}
-                  className="ml-1 opacity-0 group-hover:opacity-100 text-red-500 text-[11px] hover:text-red-300 transition"
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+                  >
+                    {chat.title}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteChat(chat.id)}
+                    className="ml-1 opacity-0 group-hover:opacity-100 text-red-500 text-[11px] hover:text-red-300 transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
 
-            {globalChats.length === 0 && (
-              <p className="text-[11px] text-zinc-600 italic px-1">
-                No standalone chats yet.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* PROJECTS */}
-        <div className="mt-2 flex-1 flex flex-col overflow-y-auto text-xs space-y-2">
-          <div className="flex items-center justify-between mb-1 px-1">
-            <span className="text-[11px] uppercase text-zinc-500">Projects</span>
-            <button
-              type="button"
-              onClick={handleCreateProject}
-              className="text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
-            >
-              + New
-            </button>
+              {globalChats.length === 0 && (
+                <p className="text-[11px] text-zinc-600 italic px-1">
+                  No standalone chats yet.
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="space-y-2 pr-1">
-            {projects.map((project) => {
-              const projectChats = getChatsForProject(project.id);
-              const isExpanded = expandedProjectId === project.id;
+          {/* PROJECTS */}
+          <div className="mt-2 flex-1 flex flex-col overflow-y-auto text-xs space-y-2">
+            <div className="flex items-center justify-between mb-1 px-1">
+              <span className="text-[11px] uppercase text-zinc-500">
+                Projects
+              </span>
+              <button
+                type="button"
+                onClick={handleCreateProject}
+                className="text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
+              >
+                + New
+              </button>
+            </div>
 
-              return (
-                <div
-                  key={project.id}
-                  className="rounded-md bg-transparent hover:bg-zinc-900/40 transition"
-                >
-                  {/* PROJECT HEADER */}
-                  <div className="flex items-center">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleProject(project.id)}
-                      className={`flex-1 flex items-center justify-between px-3 py-2 text-left rounded-md text-xs
+            <div className="space-y-2 pr-1">
+              {projects.map((project) => {
+                const projectChats = getChatsForProject(project.id);
+                const isExpanded = expandedProjectId === project.id;
+
+                return (
+                  <div
+                    key={project.id}
+                    className="rounded-md bg-transparent hover:bg-zinc-900/40 transition"
+                  >
+                    {/* PROJECT HEADER */}
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProject(project.id)}
+                        className={`flex-1 flex items-center justify-between px-3 py-2 text-left rounded-md text-xs
                         ${
                           project.id === activeProjectId
                             ? "bg-zinc-800 text-zinc-50"
                             : "text-zinc-300"
                         }
                       `}
-                    >
-                      <span className="truncate">{project.name}</span>
-                      <span className="ml-2 text-[10px] text-zinc-400">
-                        {isExpanded ? "▾" : "▸"}
-                      </span>
-                    </button>
+                      >
+                        <span className="truncate">{project.name}</span>
+                        <span className="ml-2 text-[10px] text-zinc-400">
+                          {isExpanded ? "▾" : "▸"}
+                        </span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteProject(project.id)}
-                      className="ml-1 text-red-500 text-[11px] hover:text-red-300 transition px-1"
-                    >
-                      ✕
-                    </button>
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProject(project.id)}
+                        className="ml-1 text-red-500 text-[11px] hover:text-red-300 transition px-1"
+                      >
+                        ✕
+                      </button>
+                    </div>
 
-                  {/* CHATS WITHIN PROJECT */}
-                  {isExpanded && (
-                    <div className="mt-1 ml-3 border-l border-zinc-800 pl-3 space-y-1">
-                      {projectChats.map((chat) => (
-                        <div
-                          key={chat.id}
-                          className="flex items-center group"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => handleSelectChat(chat.id)}
-                            className={`flex-1 text-left px-2 py-1 rounded-md text-[11px] truncate
+                    {/* CHATS WITHIN PROJECT */}
+                    {isExpanded && (
+                      <div className="mt-1 ml-3 border-l border-zinc-800 pl-3 space-y-1">
+                        {projectChats.map((chat) => (
+                          <div
+                            key={chat.id}
+                            className="flex items-center group"
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleSelectChat(chat.id)}
+                              className={`flex-1 text-left px-2 py-1 rounded-md text-[11px] truncate
                               ${
                                 chat.id === activeChatId
                                   ? "bg-zinc-800 text-zinc-50"
                                   : "text-zinc-300 hover:bg-zinc-800/60"
                               }
                             `}
-                          >
-                            {chat.title}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteChat(chat.id)}
-                            className="ml-1 opacity-0 group-hover:opacity-100 text-red-500 text-[11px] hover:text-red-300 transition"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      ))}
+                            >
+                              {chat.title}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteChat(chat.id)}
+                              className="ml-1 opacity-0 group-hover:opacity-100 text-red-500 text-[11px] hover:text-red-300 transition"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ))}
 
-                      <button
-                        type="button"
-                        onClick={() => handleNewChat(project.id)}
-                        className="mt-1 inline-flex items-center text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
-                      >
-                        + New chat in {project.name}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                        <button
+                          type="button"
+                          onClick={() => handleNewChat(project.id)}
+                          className="mt-1 inline-flex items-center text-[11px] px-3 py-1 rounded-full bg-[#130dbb] text-white hover:bg-[#2620e6] transition"
+                        >
+                          + New chat in {project.name}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
 
-            {projects.length === 0 && (
-              <p className="text-[11px] text-zinc-600 italic px-1">
-                No projects yet. Create one to group chats.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* LOG OUT BUTTON AT BOTTOM */}
-        <div className="pt-3 border-t border-zinc-800 mt-3">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full rounded-md bg-[#130dbb] text-white text-sm py-2 hover:bg-[#2620e6] transition"
-          >
-            Log out
-          </button>
-        </div>
-      </aside>
-
-      {/* MAIN PANEL */}
-      <main className="flex-1 flex flex-col">
-        {/* TOP BAR */}
-        <header className="border-b border-zinc-800 px-4 md:px-8 py-3 flex items-center justify-between gap-4 bg-[#050509]/90 backdrop-blur">
-          <div className="flex items-center gap-3 flex-1">
-            {/* Mobile menu button */}
-            <button
-              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800/70"
-              onClick={() => setIsSidebarOpen((prev) => !prev)}
-            >
-              <div className="space-y-1">
-                <span className="block h-[2px] w-5 bg-zinc-200" />
-                <span className="block h-[2px] w-5 bg-zinc-200" />
-                <span className="block h-[2px] w-5 bg-zinc-200" />
-              </div>
-            </button>
-
-            <div className="flex flex-col">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] md:text-xs text-zinc-400">
-                <span>Model:</span>
-                {isLoadingModels && (
-                  <span className="text-emerald-400">Loading models...</span>
-                )}
-                {modelError && (
-                  <span className="text-red-400">{modelError}</span>
-                )}
-
-                {!isLoadingModels &&
-                  !modelError &&
-                  filteredModels.length > 0 && (
-                    <>
-                      <select
-                        value={selectedModel || ""}
-                        onChange={(e) =>
-                          setSelectedModel(e.target.value || null)
-                        }
-                        className="rounded-md bg-[#050509] border border-zinc-700 px-2 py-1 text-[11px] md:text-xs text-zinc-100 focus:outline-none focus:border-zinc-300"
-                      >
-                        {filteredModels.map((m) => {
-                          const p = m.pricing?.prompt;
-                          const c = m.pricing?.completion;
-                          const paidLabel =
-                            !m.isFree && p != null && c != null
-                              ? `Paid • ${p}/${c} per 1M`
-                              : !m.isFree
-                              ? "Paid"
-                              : "Free";
-
-                          return (
-                            <option key={m.id} value={m.id}>
-                              {m.name} ({paidLabel})
-                            </option>
-                          );
-                        })}
-                      </select>
-
-                      {selectedModelObj && (
-                        <span className="text-zinc-500">
-                          {formatPrice(selectedModelObj.pricing)}
-                        </span>
-                      )}
-                    </>
-                  )}
-
-                {!isLoadingModels &&
-                  !modelError &&
-                  filteredModels.length === 0 && (
-                    <span className="text-red-400">
-                      No models available for this mode.
-                    </span>
-                  )}
-              </div>
+              {projects.length === 0 && (
+                <p className="text-[11px] text-zinc-600 italic px-1">
+                  No projects yet. Create one to group chats.
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="hidden sm:block text-[11px] md:text-xs text-zinc-400 text-right">
-            <span>Status:</span>
-            <span className="text-emerald-400">
-              {" "}
-              Backend connected • Models{" "}
-              {isLoadingModels ? "loading" : "ready"}
-            </span>
+          {/* LOG OUT BUTTON AT BOTTOM */}
+          <div className="pt-3 border-t border-zinc-800 mt-3">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="w-full rounded-md bg-[#130dbb] text-white text-sm py-2 hover:bg-[#2620e6] transition"
+            >
+              Log out
+            </button>
           </div>
-        </header>
+        </aside>
 
-        {/* CHAT AREA */}
-        <section className="flex-1 flex flex-col px-3 sm:px-4 md:px-8 py-4 overflow-hidden">
-
-          <div className="flex-1 w-full max-w-xl mx-auto overflow-y-auto space-y-6 pb-4 px-1 sm:px-0">
-            {messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                } text-sm`}
-              >
-                {msg.role === "system" ? (
-                  <div className="w-full text-center text-[11px] uppercase tracking-wide text-zinc-500">
-                    {msg.text}
-                  </div>
-                ) : (
-                  <div className="max-w-[80%] leading-relaxed whitespace-pre-wrap text-slate-100">
-                    <div
-                      className={`rounded-2xl px-3 py-2 ${
-                        msg.role === "user"
-                          ? "bg-[#20212b]"
-                          : "bg-transparent hover:bg-zinc-900/60 transition"
-                      }`}
-                    >
-                      <p>{msg.text}</p>
-
-                      {msg.imageUrl && (
-                        <img
-                          src={msg.imageUrl}
-                          alt="Generated"
-                          className="mt-2 rounded-lg max-w-full"
-                        />
-                      )}
-
-                      {msg.meta && msg.role === "user" && (
-                        <p className="mt-1 text-[10px] text-zinc-400">
-                          {msg.meta.brand} • {msg.meta.mode}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* INPUT */}
-          <form
-            onSubmit={handleSend}
-            className="w-full max-w-xl mx-auto mt-2 mb-4 px-1 sm:px-0"
-          >
-            <div className="relative flex items-end">
-              <textarea
-                rows={1}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Send a message..."
-                className="w-full resize-none rounded-2xl bg-[#1c1d22] border border-zinc-700 px-4 py-3 pr-20 text-sm text-slate-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-400"
-              />
-
+        {/* MAIN PANEL */}
+        <main className="flex-1 flex flex-col md:ml-64 md:pl-0">
+          {/* TOP BAR */}
+          <header className="border-b border-zinc-800 px-4 md:px-8 py-3 flex items-center justify-between gap-4 bg-[#050509]/90 backdrop-blur">
+            <div className="flex items-center gap-3 flex-1">
+              {/* Mobile menu button */}
               <button
-                type="submit"
-                disabled={
-                  isSending ||
-                  !input.trim() ||
-                  isLoadingModels ||
-                  !selectedModel ||
-                  filteredModels.length === 0
+                className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800/70"
+                onClick={() => setIsSidebarOpen((prev) => !prev)}
+              >
+                <div className="space-y-1">
+                  <span className="block h-[2px] w-5 bg-zinc-200" />
+                  <span className="block h-[2px] w-5 bg-zinc-200" />
+                  <span className="block h-[2px] w-5 bg-zinc-200" />
+                </div>
+              </button>
+
+              <div className="flex flex-col">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] md:text-xs text-zinc-400">
+                  <span>Model:</span>
+
+                  {isVideoMode ? (
+                    <>
+                      <select
+                        value={selectedVideoModel}
+                        onChange={(e) => setSelectedVideoModel(e.target.value)}
+                        className="rounded-md bg-[#050509] border border-zinc-700 px-2 py-1 text-[11px] md:text-xs text-zinc-100 focus:outline-none focus:border-zinc-300"
+                      >
+                        {VIDEO_MODELS.map((vm) => (
+                          <option key={vm.id} value={vm.id}>
+                            {vm.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-zinc-500">
+                        {
+                          VIDEO_MODELS.find(
+                            (vm) => vm.id === selectedVideoModel
+                          )?.priceLabel
+                        }
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      {isLoadingModels && (
+                        <span className="text-emerald-400">
+                          Loading models...
+                        </span>
+                      )}
+
+                      {modelError && (
+                        <span className="text-red-400">{modelError}</span>
+                      )}
+
+                      {!isLoadingModels &&
+                        !modelError &&
+                        filteredModels.length > 0 && (
+                          <>
+                            <select
+                              value={selectedModel || ""}
+                              onChange={(e) =>
+                                setSelectedModel(e.target.value || null)
+                              }
+                              className="rounded-md bg-[#050509] border border-zinc-700 px-2 py-1 text-[11px] md:text-xs text-zinc-100 focus:outline-none focus:border-zinc-300"
+                            >
+                              {filteredModels.map((m) => {
+                                const p = m.pricing?.prompt;
+                                const c = m.pricing?.completion;
+                                const paidLabel =
+                                  !m.isFree && p != null && c != null
+                                    ? `Paid • ${p}/${c} per 1M`
+                                    : !m.isFree
+                                    ? "Paid"
+                                    : "Free";
+
+                                return (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} ({paidLabel})
+                                  </option>
+                                );
+                              })}
+                            </select>
+
+                            {selectedModelObj && (
+                              <span className="text-zinc-500">
+                                {formatPrice(selectedModelObj.pricing)}
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                      {!isLoadingModels &&
+                        !modelError &&
+                        filteredModels.length === 0 && (
+                          <span className="text-red-400">
+                            No models available for this mode.
+                          </span>
+                        )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="hidden sm:block text-[11px] md:text-xs text-zinc-400 text-right">
+              <span>Status:</span>
+              <span className="text-emerald-400">
+                {" "}
+                Backend connected • Models{" "}
+                {isLoadingModels ? "loading" : "ready"}
+              </span>
+            </div>
+          </header>
+
+          {/* CHAT AREA */}
+          <section className="flex-1 flex flex-col px-4 md:px-8 py-4 pb-[env(safe-area-inset-bottom)] overflow-hidden">
+            <div className="flex-1 w-full max-w-xl mx-auto overflow-y-auto space-y-6 pb-4">
+              {messages.map((msg, index) => {
+                // Special case: video response
+                if (msg.type === "video" && msg.videoUrl) {
+                  return (
+                    <div key={index} className="flex justify-start text-sm">
+                      <div className="max-w-[80%] leading-relaxed whitespace-pre-wrap text-slate-100">
+                        <div className="rounded-2xl px-3 py-2 bg-transparent hover:bg-zinc-900/60 transition">
+                          {msg.text && <p className="mb-2">{msg.text}</p>}
+                          <video
+                            src={msg.videoUrl}
+                            controls
+                            className="mt-1 rounded-lg max-w-full"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
                 }
-                className={`absolute right-2 bottom-2 px-4 py-1.5 rounded-xl text-sm font-medium transition
+
+                return (
+                  <div
+                    key={index}
+                    className={`flex ${
+                      msg.role === "user" ? "justify-end" : "justify-start"
+                    } text-sm`}
+                  >
+                    {msg.role === "system" ? (
+                      <div className="w-full text-center text-[11px] uppercase tracking-wide text-zinc-500">
+                        {msg.text}
+                      </div>
+                    ) : (
+                      <div className="max-w-[80%] leading-relaxed whitespace-pre-wrap text-slate-100">
+                        <div
+                          className={`rounded-2xl px-3 py-2 ${
+                            msg.role === "user"
+                              ? "bg-[#20212b]"
+                              : "bg-transparent hover:bg-zinc-900/60 transition"
+                          }`}
+                        >
+                          <p>{msg.text}</p>
+
+                          {msg.imageUrl && (
+                            <img
+                              src={msg.imageUrl}
+                              alt="Generated"
+                              className="mt-2 rounded-lg max-w-full"
+                            />
+                          )}
+
+                          {msg.meta && msg.role === "user" && (
+                            <p className="mt-1 text-[10px] text-zinc-400">
+                              {msg.meta.brand} • {msg.meta.mode}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* INPUT */}
+            <form
+              onSubmit={handleSend}
+              className="w-full max-w-xl mx-auto mt-2 mb-4 px-0"
+            >
+              <div className="relative flex items-end">
+                <textarea
+                  rows={1}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="Send a message..."
+                  className="w-full resize-none rounded-2xl bg-[#1c1d22] border border-zinc-700 px-4 py-3 pr-20 text-sm text-slate-100 placeholder:text-zinc-500 focus:outline-none focus:border-zinc-400"
+                />
+
+                <button
+                  type="submit"
+                  disabled={disableSend}
+                  className={`absolute right-2 bottom-2 px-4 py-1.5 rounded-xl text-sm font-medium transition
     ${
-      isSending ||
-      !input.trim() ||
-      isLoadingModels ||
-      !selectedModel ||
-      filteredModels.length === 0
+      disableSend
         ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
         : "bg-[#130dbb] text-white hover:bg-[#2620e6]"
     }
   `}
-              >
-                {isSending ? "..." : "Send"}
-              </button>
-            </div>
+                >
+                  {isSending ? "..." : "Send"}
+                </button>
+              </div>
 
-            {selectedModelObj && (
-              <p className="mt-2 text-[11px] text-zinc-500">
-                Using model:{" "}
-                <span className="text-zinc-300">{selectedModelObj.name}</span>
-              </p>
-            )}
-          </form>
-        </section>
-      </main>
+              {selectedModelObj && !isVideoMode && (
+                <p className="mt-2 text-[11px] text-zinc-500">
+                  Using model:{" "}
+                  <span className="text-zinc-300">{selectedModelObj.name}</span>
+                </p>
+              )}
+            </form>
+          </section>
+        </main>
+      </div>
     </div>
   );
 }
