@@ -11,6 +11,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 🔍 simple request logger so we can see if routes are actually hit
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
 // ------------- ENV VARIABLES -------------
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
@@ -36,6 +42,15 @@ if (!FAL_API_KEY) {
 // configure fal client
 fal.config({
   credentials: FAL_API_KEY,
+});
+
+// ------------- BASIC HEALTH CHECK -------------
+app.get("/api/health", (req, res) => {
+  return res.json({
+    status: "ok",
+    service: "Byte-Size AI backend",
+    videoEnabled: Boolean(FAL_API_KEY),
+  });
 });
 
 // ------------- AUTH MIDDLEWARE & LOGIN -------------
